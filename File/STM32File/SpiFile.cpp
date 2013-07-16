@@ -3,7 +3,10 @@
 #include "SpiFile.h"
 #include "stm32f10x_conf.h"
 
-//check developer branch
+#include <iostream>
+using namespace std;
+
+#include <stdio.h>
 
 
 // ID
@@ -107,8 +110,8 @@ private:
 SPIFile::Private::Private(SPIFile *parent) : q(parent)
 {
     isReadWriteMode = false;
-    writeCursor = GetWritePos();
-    readCursor = LOWEST_ADDRESS;
+    writeCursor = 0;
+    readCursor = 0;
 }
 
 SPIFile::Private::~Private()
@@ -284,13 +287,20 @@ void SPIFile::Private::ReadBuffer(u8 *dataBuffer, u16 addr, u16 bytesToRead)
     ReadWriteByte(ReadData);
 
     // Send address to read
-    ReadWriteByte((u8)(addr >> 24));
+   // ReadWriteByte((u8)(addr >> 24));
     ReadWriteByte((u8)(addr >> 16));
     ReadWriteByte((u8)(addr >> 8));
     ReadWriteByte((u8)(addr));
 
+    printf("Read buffer \r\n");
     for(int i = 0 ; i < bytesToRead ; ++ i)
+    {
         dataBuffer[i] = ReadWriteByte(0xFF); // Read data
+        printf("%02x " , dataBuffer[i]);
+    }
+
+    printf("\r\n");
+
     UnselectDevice();
 }
 
@@ -348,6 +358,8 @@ void SPIFile::Private::SectorErasing(u16 sectorNO)
 {
     u32 addr = sectorNO * SECTOR_SIZE;
 
+    printf("Sector %d has been erased \r\n\r\n");
+
     WriteEnable(); // This is a must
     WaitForDeviceRelease();  // Make sure flash is ready
     SelectDevice(); // CS open
@@ -377,13 +389,19 @@ void SPIFile::Private::WriteData(u8 *dataBuffer, u16 bytesToWrite)
     ReadWriteByte(WritePage); // Send WritePage command
 
     // Send data address
-    ReadWriteByte((u8)(writeCursor >> 24));
+   // ReadWriteByte((u8)(writeCursor >> 24));
     ReadWriteByte((u8)(writeCursor >> 16));
     ReadWriteByte((u8)(writeCursor >> 8));
     ReadWriteByte((u8)(writeCursor));
 
+    printf("Writing ...\r\n");
+
     for(int i = 0 ; i < bytesToWrite ; ++ i)
+    {
         ReadWriteByte(dataBuffer[i]);  // Write file content
+        cout << dataBuffer[i];
+    }
+    printf("\r\n");
 
     UnselectDevice();
     WaitForDeviceRelease();   // Wait for writing progress ends
@@ -393,12 +411,15 @@ void SPIFile::Private::WriteData(u8 *dataBuffer, u16 bytesToWrite)
 void SPIFile::Private::WritePageByPage(u8 *dataBuffer, u16 bytesToWrite, bool mainBody)
 {
     u16 pageOffset = 0;
+    u16 pageRemain = 0;
     u8 hasEndTag = mainBody ? 1 : 0;
 
     while(bytesToWrite > 0)
     {
         pageOffset = writeCursor % PAGE_SIZE;
-        if(bytesToWrite <= pageOffset || (pageOffset == 0 && bytesToWrite + hasEndTag <= PAGE_SIZE))
+        pageRemain = PAGE_SIZE - pageOffset;
+
+        if(bytesToWrite <= pageRemain || (pageOffset == 0 && bytesToWrite + hasEndTag <= PAGE_SIZE))
         {
             WriteData(dataBuffer , bytesToWrite);
             writeCursor += bytesToWrite;
@@ -415,10 +436,10 @@ void SPIFile::Private::WritePageByPage(u8 *dataBuffer, u16 bytesToWrite, bool ma
         {
             if(pageOffset == 0)
                 pageOffset = PAGE_SIZE;
-            WriteData(dataBuffer , pageOffset);
-            dataBuffer += pageOffset;
-            writeCursor += pageOffset;
-            bytesToWrite -= pageOffset;
+            WriteData(dataBuffer , pageRemain);
+            dataBuffer += pageRemain;
+            writeCursor += pageRemain;
+            bytesToWrite -= pageRemain;
         }
     }
 }
@@ -457,14 +478,13 @@ void SPIFile::Private::SafeWrite(u8 *dataBuffer, u16 bytesToWrite, bool addEndTa
             SectorErasing(sectorNO);
             for(i = 0 ; i < sectorRemain ; ++ i)
                 sectorBuffer[sectorOffSet + i] = dataBuffer[i];
-            writeCursor = sectorNO * SECTOR_SIZE;  // Set the SEEK_SET to the beginnig of this sector
+            writeCursor = sectorNO * SECTOR_SIZE;  // Set the SEEK_SET to the beginning of this sector
         }
 
         WritePageByPage(dataBuffer , sectorRemain , addEndTag);
         bytesToWrite -= sectorRemain;
         dataBuffer += sectorRemain;
     }
-    SetWritePos();
 }
 
 SPIFile::SPIFile(u8 *fileName, OpenMode openMode)
@@ -476,8 +496,9 @@ SPIFile::SPIFile(u8 *fileName, OpenMode openMode)
         strcpy((char *)d->fileName , (char *)fileName);
     if(openMode == modeReadWrite)
         d->isReadWriteMode = true;
-   // d->SetPermanent4ByteMode(); // Enter 4 Byte Address Mode , take care of all your address
+    // d->SetPermanent4ByteMode(); // Enter 4 Byte Address Mode , take care of all your address
     d->Enter4ByteMode();
+    cout << "Construct ok !" << endl;
 }
 
 bool SPIFile::Init()
@@ -488,6 +509,7 @@ bool SPIFile::Init()
 
 void SPIFile::Write(u8 *writeBuffer, u16 bytesToWrite)
 {
+    cout << "Write " << endl;
     d->SafeWrite(d->fileName , strlen((char *)d->fileName) , false);
     d->SafeWrite(writeBuffer , bytesToWrite);
 }
@@ -527,6 +549,7 @@ u16 SPIFile::ReadNextFile(u8 *recvBuffer)
     u16 fileLen = 0;
     bool singleFF = false;
 
+    printf("Reading ... \r\n");
     do
     {
         recvByte = d->ReadWriteByte(0xFF);
@@ -547,9 +570,15 @@ u16 SPIFile::ReadNextFile(u8 *recvBuffer)
         if(!singleFF)
         {
             recvBuffer[fileLen] = recvByte;
+            cout << recvBuffer[fileLen];
             ++ fileLen;
         }
     }while(!singleFF);
+
+    if(fileLen == 0)
+        printf("0 begin in this secotr\r\n");
+
+    printf("\r\n");
 
     d->UnselectDevice();
     return fileLen;
