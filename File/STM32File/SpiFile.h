@@ -42,6 +42,9 @@ public:
     // This function is for testing only , for reading pleas use ReadNextFile
     void Read(u8 *readBuffer , u16 bytesToRead , u32 addr);
 
+
+    void Write(u8 *writeBuffer, u16 bytesToWrite , u32 addr);
+
 protected:
     // Do configuration here
     virtual bool Init();
