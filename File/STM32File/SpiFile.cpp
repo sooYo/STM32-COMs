@@ -10,7 +10,7 @@ using namespace std;
 
 
 // ID
-#define STANDARD_ID 0XEF14
+#define STANDARD_ID 0XEF18
 
 // Comand
 #define WriteReg1            0x01  // Write status register
@@ -30,6 +30,7 @@ using namespace std;
 #define Exit4ByteAddrMode    0xE9  // 3Byte mode only allows 24M address
 #define ExtendedAddress      0xC5  //  ...
 #define ReadExtenedAddress   0xC8
+#define FastReadData         0x0B  // Read faster
 
 // Configuration
 #define FILE_PORT      GPIOA
@@ -42,7 +43,7 @@ using namespace std;
 #define CS_PIN     GPIO_Pin_2    // select the target device
 
 // Other defines
-#define LOWEST_ADDRESS         4    // 4 byte to store the writeCursor pos
+#define LOWEST_ADDRESS         4    // 4 bytes to store the writeCursor pos
 #define MAX_FILE_NAME_LEN      50
 #define PAGE_SIZE              256
 #define SECTOR_SIZE            4096
@@ -90,22 +91,22 @@ public:
 
     u8 readExtendedAddress();
 
+    uint8_t ReadRegStatus(int regNO);
+
+    void WriteRegStatus(u8 data , int regNO);
+
     // Data members
     u8 fileName[MAX_FILE_NAME_LEN];
 
     bool isReadWriteMode;
 
-    bool isIn4ByteMode;
-
     u32 writeCursor;
 
     u32 readCursor;
 
+    u8 currentSector;
+
 private:
-    uint8_t ReadRegStatus(int regNO);
-
-    void WriteRegStatus(u8 data , int regNO);
-
     void ReadBuffer(u8 *dataBuffer , u32 addr , u16 bytesToRead);
 
     void WriteData(u8 *dataBuffer , u16 bytesToWrite);
@@ -120,9 +121,9 @@ private:
 SPIFile::Private::Private(SPIFile *parent) : q(parent)
 {
     isReadWriteMode = false;
-    isIn4ByteMode = false;
-    writeCursor = 16 ;
+    writeCursor = 0 ;
     readCursor = 0;
+    currentSector = 0;
 }
 
 SPIFile::Private::~Private()
@@ -179,17 +180,6 @@ u8  SPIFile::Private::ReadWriteByte(u8 TxData)
 
 void SPIFile::Private::CheckAddressModeForAddr(u32 addr)
 {
-//    if(addr >= TRIGGER_ADDR_OF_4BYTE)
-//    {
-////        if(!isIn4ByteMode)
-//            WriteExtendedAddress((u8)(addr >> 24));
-//        isIn4ByteMode = true;
-//    }
-//    else
-//    {
-//        if(isIn4ByteMode)
-//            Exit4ByteMode();
-//    }
     WriteExtendedAddress((u8)(addr >> 24));
 }
 
@@ -199,7 +189,6 @@ void SPIFile::Private::WriteExtendedAddress(u8 high8Bits)
     SelectDevice();
 
     ReadWriteByte(ExtendedAddress);
-
     ReadWriteByte(high8Bits);
 
     UnselectDevice();
@@ -395,9 +384,6 @@ void SPIFile::Private::Enter4ByteMode()
     SelectDevice();
     ReadWriteByte(Enter4ByteAddrMode);
     UnselectDevice();
-
-    isIn4ByteMode = true;
-    printf("Enter 4 Byte Mode \r\n");
 }
 
 void SPIFile::Private::Exit4ByteMode()
@@ -405,9 +391,6 @@ void SPIFile::Private::Exit4ByteMode()
     SelectDevice();
     ReadWriteByte(Exit4ByteAddrMode);
     UnselectDevice();
-
-    isIn4ByteMode = false;
-    printf("Exit 4 Byte Mode \r\n");
 }
 
 // Param sectorNO is the number of the sector you wanna erase , not the address
@@ -428,8 +411,6 @@ void SPIFile::Private::SectorErasing(u16 sectorNO)
     ReadWriteByte(EraseSector);
 
     // Send Erase address
-//    if(isIn4ByteMode)
-//        ReadWriteByte((u8)(addr >> 24));
     ReadWriteByte((u8)(addr >> 16));
     ReadWriteByte((u8)(addr >> 8));
     ReadWriteByte((u8)addr);
@@ -455,8 +436,6 @@ void SPIFile::Private::WriteData(u8 *dataBuffer, u16 bytesToWrite)
     ReadWriteByte(WritePage); // Send WritePage command
 
     // Send data address
-//    if(isIn4ByteMode)
-//        ReadWriteByte((u8)(writeCursor >> 24));
     ReadWriteByte((u8)(writeCursor >> 16));
     ReadWriteByte((u8)(writeCursor >> 8));
     ReadWriteByte((u8)(writeCursor));
@@ -466,9 +445,9 @@ void SPIFile::Private::WriteData(u8 *dataBuffer, u16 bytesToWrite)
     for(int i = 0 ; i < bytesToWrite ; ++ i)
     {
         ReadWriteByte(dataBuffer[i]);  // Write file content
-        cout << dataBuffer[i];
+        //cout << dataBuffer[i];
     }
-    printf("\r\n");
+    printf("Write ok ! \r\n");
 
     UnselectDevice();
     WaitForDeviceRelease();   // Wait for writting progress ends
@@ -481,7 +460,7 @@ void SPIFile::Private::WritePageByPage(u8 *dataBuffer, u16 bytesToWrite, bool ma
     u16 pageRemain = 0;
     u8 hasEndTag = mainBody ? 1 : 0;
 
-    while(bytesToWrite > 0)
+    while(bytesToWrite > 0 && writeCursor / SECTOR_SIZE <= currentSector)
     {
         pageOffset = writeCursor % PAGE_SIZE;
         pageRemain = PAGE_SIZE - pageOffset;
@@ -529,12 +508,16 @@ void SPIFile::Private::SafeWrite(u8 *dataBuffer, u16 bytesToWrite, bool addEndTa
         u16 sectorOffSet = writeCursor % SECTOR_SIZE;
         u16 sectorRemain = SECTOR_SIZE - sectorOffSet;
 
+        currentSector = sectorNO;
+
         printf("SectorNO %d \r\n " , sectorNO);
         printf("SectorOffSet %d \r\n " , sectorOffSet);
         printf("SectorRemain %d \r\n " , sectorRemain);
 
-        if(bytesToWrite <= sectorRemain || sectorOffSet == 0)
+        if(bytesToWrite <= sectorRemain)
             sectorRemain = bytesToWrite;
+
+        printf("BytesToWrite in safe write : %d \r\n" , sectorRemain);
 
         u8 sectorBuffer[SECTOR_SIZE]; // For reading the whole sector
         ReadBuffer(sectorBuffer , sectorNO * SECTOR_SIZE , SECTOR_SIZE);
@@ -552,12 +535,18 @@ void SPIFile::Private::SafeWrite(u8 *dataBuffer, u16 bytesToWrite, bool addEndTa
             for(i = 0 ; i < sectorRemain ; ++ i)
                 sectorBuffer[sectorOffSet + i] = dataBuffer[i];
             writeCursor = sectorNO * SECTOR_SIZE;  // Set the SEEK_SET to the beginning of this sector
+            printf("Sectoroffse + SectorRemain : %d \r\n "  , sectorOffSet + sectorRemain);
             WritePageByPage(sectorBuffer , sectorOffSet + sectorRemain , addEndTag);
         }
         else
+        {
+            printf("No sector erasing \r\n");
+            printf("WriteCrusor in safe write %d \r\n" , writeCursor);
             WritePageByPage(dataBuffer , sectorRemain , addEndTag);
+        }
         bytesToWrite -= sectorRemain;
         dataBuffer += sectorRemain;
+        printf("rest bytesToWrite : %d \r\n " ,  bytesToWrite);
     }
 }
 
@@ -571,12 +560,10 @@ SPIFile::SPIFile(u8 *fileName, OpenMode openMode)
     if(openMode == modeReadWrite)
         d->isReadWriteMode = true;
 
-    d->Exit4ByteMode(); // We set to 3 byte mode coz the d->isIn4ByteMode was initiated as false
-    cout << "Construct ok !" << endl;
+    d->Exit4ByteMode(); // We set to 3 byte mode coz we are using ExtendedAddress to access 4 byte address
+    d->WriteRegStatus(0 , 1);  // Set flash to unprotect status when it starts
 
-//    d->WriteExtendedAddress((u8) 1);
-//    u8 bit = d->readExtendedAddress();
-//    printf("%0x\r\n" , bit);
+    cout << "Construct ok !" << endl;
 }
 
 bool SPIFile::Init()
@@ -585,10 +572,10 @@ bool SPIFile::Init()
     return d->ReadDeviceID() == STANDARD_ID;
 }
 
-void SPIFile::Write(u8 *writeBuffer, u16 bytesToWrite)
+void SPIFile::Write(u8 *writeBuffer, u32 bytesToWrite)
 {
-    d->SafeWrite(d->fileName , strlen((char *)d->fileName) , false);
     d->SafeWrite(writeBuffer , bytesToWrite);
+    printf("Write ok cursor pos : %d \r\n " , d->writeCursor);
 }
 
 void SPIFile::Write(u8 *writeBuffer, u16 bytesToWrite, u32 addr)
@@ -596,13 +583,10 @@ void SPIFile::Write(u8 *writeBuffer, u16 bytesToWrite, u32 addr)
     d->CheckAddressModeForAddr(addr);
 
     d->WriteEnable();
-
     d->SelectDevice();
 
     d->ReadWriteByte(WritePage);
 
-//    if(d->isIn4ByteMode)
-//        d->ReadWriteByte((u8)(addr >>24));
     d->ReadWriteByte((u8)(addr >>16));
     d->ReadWriteByte((u8)(addr >> 8));
     d->ReadWriteByte((u8)(addr));
@@ -621,24 +605,21 @@ void SPIFile::Read(u8 *readBuffer, u16 readLen , u32 addr)
     d->CheckAddressModeForAddr(addr);
 
     d->SelectDevice();
-//    if(d->isIn4ByteMode)
-//        d->ReadWriteByte(ReadData4Byte);
-//    else
-        d->ReadWriteByte(ReadData);
+    d->ReadWriteByte(FastReadData);
 
-//    if(d->isIn4ByteMode)
-//        d->ReadWriteByte((u8)(addr >> 24));
     d->ReadWriteByte((u8)(addr >> 16));
     d->ReadWriteByte((u8)(addr >> 8));
     d->ReadWriteByte((u8)(addr));
 
-    printf("\r\n");
+    d->ReadWriteByte(0x00); // The dummy clocks
+
+//    printf("Reading ... \r\n");
     for(int i = 0 ; i < readLen ; ++ i)
     {
         readBuffer[i] = d->ReadWriteByte(0xFF);
-        cout << readBuffer[i];
+//        printf("%02x " , readBuffer[i]);
     }
-    printf("\r\n");
+//    printf("\r\n");
 
     d->UnselectDevice();
 }
@@ -652,14 +633,9 @@ u16 SPIFile::ReadNextFile(u8 *recvBuffer)
     d->SelectDevice();
 
     // Send ReadData command
-    if(d->isIn4ByteMode)
-        d->ReadWriteByte(ReadData4Byte);
-    else
-        d->ReadWriteByte(ReadData);
+    d->ReadWriteByte(ReadData);
 
     // Send readCursor pos
-//    if(d->isIn4ByteMode)
-//        d->ReadWriteByte((u8)(d->readCursor >> 24));
     d->ReadWriteByte((u8)(d->readCursor >> 16));
     d->ReadWriteByte((u8)(d->readCursor >> 8));
     d->ReadWriteByte((u8)(d->readCursor));

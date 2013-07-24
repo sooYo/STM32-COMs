@@ -33,13 +33,13 @@ public:
     // @writeBuffer     the data to write
     // @bytesToWrite    length of the data
     /* we can't get the amount of data that has been written */
-    void Write(u8 *writeBuffer , u16 bytesToWrite);
+    void Write(const u8 *writeBuffer , u32 bytesToWrite);
 
     // @recvBuffer    buffer for receiving data
     // @Retval        the actual length of this file
     u16 ReadNextFile(u8 *recvBuffer);
 
-    // This function is for testing only , for reading pleas use ReadNextFile
+    //
     void Read(u8 *readBuffer , u16 bytesToRead , u32 addr);
 
 
