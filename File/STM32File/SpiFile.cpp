@@ -566,6 +566,11 @@ SPIFile::SPIFile(u8 *fileName, OpenMode openMode)
     cout << "Construct ok !" << endl;
 }
 
+SPIFile::~SPIFile()
+{
+    delete d;
+}
+
 bool SPIFile::Init()
 {
     d->SPI_Configuration();
@@ -605,13 +610,11 @@ void SPIFile::Read(u8 *readBuffer, u16 readLen , u32 addr)
     d->CheckAddressModeForAddr(addr);
 
     d->SelectDevice();
-    d->ReadWriteByte(FastReadData);
+    d->ReadWriteByte(ReadData);
 
     d->ReadWriteByte((u8)(addr >> 16));
     d->ReadWriteByte((u8)(addr >> 8));
     d->ReadWriteByte((u8)(addr));
-
-    d->ReadWriteByte(0x00); // The dummy clocks
 
 //    printf("Reading ... \r\n");
     for(int i = 0 ; i < readLen ; ++ i)
@@ -679,13 +682,11 @@ u16 SPIFile::ReadNextFile(u8 *recvBuffer)
     return fileLen;
 }
 
-
 void SPIFile::SetFileName(u8 *fileName)
 {
     strcpy((char *)d->fileName , "0");
     strcpy((char *)d->fileName , (char *)fileName);
 }
-
 
 void SPIFile::SetReadWriteMode(OpenMode openMode)
 {

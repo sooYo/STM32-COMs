@@ -26,6 +26,8 @@ public:
 
     SPIFile(u8 *fileName = NULL , OpenMode openMode = modeReadOnly);
 
+    ~SPIFile();
+
     void SetFileName(u8 *fileName);
 
     void SetReadWriteMode(OpenMode openMode);
