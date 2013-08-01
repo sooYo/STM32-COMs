@@ -33,7 +33,7 @@ public:
     // @writeBuffer     the data to write
     // @bytesToWrite    length of the data
     /* we can't get the amount of data that has been written */
-    void Write(const u8 *writeBuffer , u32 bytesToWrite);
+    void Write(u8 *writeBuffer , u32 bytesToWrite);
 
     // @recvBuffer    buffer for receiving data
     // @Retval        the actual length of this file
