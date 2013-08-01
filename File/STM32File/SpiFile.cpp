@@ -63,37 +63,45 @@ public:
 
     void SetPermanent4ByteMode();
 
+    /* CS control */
     void SelectDevice();
 
     void UnselectDevice();
 
+    /* Check busy bit */
     void WaitForDeviceRelease();
 
     void SPI_Configuration();
 
+    /* Write enable\disable */
     void WriteEnable();
 
     void WriteDisable();
 
+    /* Enter\Exit 4 byte mode */
     void Exit4ByteMode();
 
     void Enter4ByteMode();
 
-    void SafeWrite(u8 *dataBuffer , u16 bytesToWrite , bool addEndTag = true); // This function should throw some exceptions
+    /* Write with safe checking */
+    void SafeWrite(u8 *dataBuffer , u32 bytesToWrite , u32 addr = 0 ,  bool addEndTag = false); // This function should throw some exceptions
 
-    u16 ReadDeviceID();
-
-    u8 ReadWriteByte(u8 data);
-
+    /* functions about extended address */
     void CheckAddressModeForAddr(u32 addr);  // This function would manage address mode , just put the reading or writting pos to it
 
     void WriteExtendedAddress(u8 high8Bits);
 
     u8 readExtendedAddress();
 
+    u16 ReadDeviceID();
+
+    u8 ReadWriteByte(u8 data);  // A special function for sending command and getting return
+
+    /* Reg handling */
     uint8_t ReadRegStatus(int regNO);
 
     void WriteRegStatus(u8 data , int regNO);
+
 
     // Data members
     u8 fileName[MAX_FILE_NAME_LEN];
@@ -106,7 +114,8 @@ public:
 
     u8 currentSector;
 
-private:
+private: 
+    /* The function below is about the detail , user is supposed to ignore them */
     void ReadBuffer(u8 *dataBuffer , u32 addr , u16 bytesToRead);
 
     void WriteData(u8 *dataBuffer , u16 bytesToWrite);
@@ -491,11 +500,12 @@ void SPIFile::Private::WritePageByPage(u8 *dataBuffer, u16 bytesToWrite, bool ma
 }
 
 /* This function can handle more situation */
-void SPIFile::Private::SafeWrite(u8 *dataBuffer, u16 bytesToWrite, bool addEndTag)
+void SPIFile::Private::SafeWrite(u8 *dataBuffer , u32 bytesToWrite , u32 addr , bool addEndTag)
 {
     if(!isReadWriteMode)
         return;
 
+    writeCursor = addr;
     printf("writecursor : %d \r\n" , writeCursor);
 
     while(bytesToWrite > 0)
@@ -577,59 +587,47 @@ bool SPIFile::Init()
     return d->ReadDeviceID() == STANDARD_ID;
 }
 
-void SPIFile::Write(u8 *writeBuffer, u32 bytesToWrite)
+void SPIFile::Write(u8 *writeBuffer, u32 addr, u32 bytesToWrite)
 {
-    d->SafeWrite(writeBuffer , bytesToWrite);
-    printf("Write ok cursor pos : %d \r\n " , d->writeCursor);
+    // Just use the Private::SafeWrite function
+    d->SafeWrite(writeBuffer , bytesToWrite , addr);
 }
 
-void SPIFile::Write(u8 *writeBuffer, u16 bytesToWrite, u32 addr)
-{
-    d->CheckAddressModeForAddr(addr);
-
-    d->WriteEnable();
-    d->SelectDevice();
-
-    d->ReadWriteByte(WritePage);
-
-    d->ReadWriteByte((u8)(addr >>16));
-    d->ReadWriteByte((u8)(addr >> 8));
-    d->ReadWriteByte((u8)(addr));
-
-    for(int i = 0 ; i < bytesToWrite ; ++ i)
-        d->ReadWriteByte(writeBuffer[i]);
-
-    d->UnselectDevice();
-    d->WaitForDeviceRelease();
-
-}
-
-void SPIFile::Read(u8 *readBuffer, u16 readLen , u32 addr)
+void SPIFile::Read(u8 *readBuffer, u32 addr, u32 bytesToRead)
 {
     // The addr is beyond 16 Mb?
     d->CheckAddressModeForAddr(addr);
 
-    d->SelectDevice();
-    d->ReadWriteByte(ReadData);
+    d->SelectDevice();  // CS open
+    d->ReadWriteByte(ReadData);  // Send command
 
+    /* Send the address */
     d->ReadWriteByte((u8)(addr >> 16));
     d->ReadWriteByte((u8)(addr >> 8));
     d->ReadWriteByte((u8)(addr));
 
-//    printf("Reading ... \r\n");
-    for(int i = 0 ; i < readLen ; ++ i)
+    /* Reading data */
+    for(int i = 0 ; i < bytesToRead ; ++ i)
     {
         readBuffer[i] = d->ReadWriteByte(0xFF);
-//        printf("%02x " , readBuffer[i]);
+        // You may do some printing here
     }
-//    printf("\r\n");
 
-    d->UnselectDevice();
+    d->UnselectDevice();  // CS close
 }
 
-//
+void SPIFile::Write(u8 *writeBuffer, u32 bytesToWrite)
+{
+    return;  // It's not complete
+
+    d->SafeWrite(writeBuffer , bytesToWrite);
+    printf("Write ok cursor pos : %d \r\n " , d->writeCursor);
+}
+
 u16 SPIFile::ReadNextFile(u8 *recvBuffer)
 {
+    return 0; // It's not complete
+
     // The readCursor is already beyond 16Mb ?
     d->CheckAddressModeForAddr(d->readCursor);
 

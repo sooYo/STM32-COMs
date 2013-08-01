@@ -32,20 +32,22 @@ public:
 
     void SetReadWriteMode(OpenMode openMode);
 
-    // @writeBuffer     the data to write
-    // @bytesToWrite    length of the data
-    /* we can't get the amount of data that has been written */
+    /* The two functions right below is now on testing , please don't use it in any formal function */
     void Write(u8 *writeBuffer , u32 bytesToWrite);
+    void ReadNextFile(u8 *readBuffer);
+   /* */
 
-    // @recvBuffer    buffer for receiving data
-    // @Retval        the actual length of this file
-    u16 ReadNextFile(u8 *recvBuffer);
+    // This function is used to read the data on spi flash
+    // @readBuffer      buffer for recving data
+    // @addr            the begin address of the data on spi flash
+    // @bytesToRead     how long do you want to read
+    void Read(u8 *readBuffer , u32 addr , u32 bytesToRead);
 
-    //
-    void Read(u8 *readBuffer , u16 bytesToRead , u32 addr);
-
-
-    void Write(u8 *writeBuffer, u16 bytesToWrite , u32 addr);
+    // This function is used to write data to spi flash
+    // @writeBuffe      data buffer that you want to write to the spi falsh
+    // @addr            the begin address on spi flash you're going to write
+    // @bytesToWrite    the lenght of the data buffer
+    void Write(u8 *writeBuffer,  u32 addr , u32 bytesToWrite);
 
 protected:
     // Do configuration here
